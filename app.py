@@ -1764,44 +1764,46 @@ def pagina_historial():
     html("""
     <div class="page-title">📋 Historial de pedidos</div>
     <div class="page-subtitle">
-        Consulta de pedidos registrados.
+        Consulta de pedidos registrados y detalle de los artículos solicitados.
     </div>
     """)
 
     conn = conectar()
 
     try:
+        filtro_usuario = None
 
-        if st.session_state["rol"] == "Administrador":
+        if st.session_state["rol"] != "Administrador":
+            filtro_usuario = st.session_state["usuario"]
 
-            df = pd.read_sql_query("""
-                SELECT
-                    numero_pedido AS "Pedido",
-                    fecha AS "Fecha",
-                    usuario AS "Usuario",
-                    area AS "Área",
-                    valor_total AS "Valor total",
-                    estado AS "Estado"
-                FROM pedidos
-                ORDER BY id DESC
-            """, conn)
+        consulta = """
+            SELECT
+                p.numero_pedido AS "Pedido",
+                p.fecha AS "Fecha",
+                p.usuario AS "Usuario",
+                p.area AS "Área",
+                d.item AS "Código",
+                d.descripcion AS "Descripción",
+                d.cantidad AS "Cantidad",
+                d.valor_unitario AS "Valor unitario",
+                d.valor_total AS "Total",
+                p.estado AS "Estado"
+            FROM pedidos p
+            INNER JOIN detalle_pedidos d
+                ON d.pedido_id = p.id
+        """
 
+        if filtro_usuario is not None:
+            consulta += " WHERE p.usuario = ? "
+            consulta += " ORDER BY p.id DESC, d.id ASC"
+            df = pd.read_sql_query(
+                consulta,
+                conn,
+                params=(filtro_usuario,)
+            )
         else:
-
-            df = pd.read_sql_query("""
-                SELECT
-                    numero_pedido AS "Pedido",
-                    fecha AS "Fecha",
-                    usuario AS "Usuario",
-                    area AS "Área",
-                    valor_total AS "Valor total",
-                    estado AS "Estado"
-                FROM pedidos
-                WHERE usuario = ?
-                ORDER BY id DESC
-            """, conn, params=(
-                st.session_state["usuario"],
-            ))
+            consulta += " ORDER BY p.id DESC, d.id ASC"
+            df = pd.read_sql_query(consulta, conn)
 
     finally:
         conn.close()
@@ -1810,13 +1812,73 @@ def pagina_historial():
         st.info("No existen pedidos registrados.")
         return
 
-    df["Valor total"] = df["Valor total"].apply(dinero)
+    # Formatear valores para presentación
+    df["Cantidad"] = df["Cantidad"].apply(
+        lambda x: f"{float(x):,.0f}".replace(",", ".")
+    )
+    df["Valor unitario"] = df["Valor unitario"].apply(dinero)
+    df["Total"] = df["Total"].apply(dinero)
 
     st.dataframe(
-        df,
+        df[
+            [
+                "Pedido",
+                "Fecha",
+                "Usuario",
+                "Área",
+                "Código",
+                "Descripción",
+                "Cantidad",
+                "Valor unitario",
+                "Total",
+                "Estado"
+            ]
+        ],
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        column_config={
+            "Descripción": st.column_config.TextColumn(
+                "Descripción",
+                width="large"
+            ),
+            "Código": st.column_config.TextColumn(
+                "Código",
+                width="small"
+            )
+        }
     )
+
+    st.subheader("📦 Detalle de los pedidos")
+
+    # Permite consultar cada pedido individualmente sin perder el detalle.
+    pedidos = df["Pedido"].drop_duplicates().tolist()
+
+    for numero_pedido in pedidos:
+        detalle = df[df["Pedido"] == numero_pedido]
+        primera = detalle.iloc[0]
+
+        with st.expander(
+            f"{numero_pedido} | {primera['Área']} | {primera['Usuario']} | {primera['Estado']}"
+        ):
+            st.write(
+                f"**Fecha:** {primera['Fecha']}  |  "
+                f"**Área:** {primera['Área']}  |  "
+                f"**Usuario:** {primera['Usuario']}"
+            )
+
+            st.dataframe(
+                detalle[
+                    [
+                        "Código",
+                        "Descripción",
+                        "Cantidad",
+                        "Valor unitario",
+                        "Total"
+                    ]
+                ],
+                use_container_width=True,
+                hide_index=True
+            )
 
 
 # ============================================================
