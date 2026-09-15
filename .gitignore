@@ -1,0 +1,11 @@
+# Datos locales de la aplicación (no subir a GitHub)
+*.db
+*.sqlite
+*.sqlite3
+
+# Secretos
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
